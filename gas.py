@@ -2,21 +2,29 @@
 
 import numpy as np
 import sounddevice as sd
-import time
 
 # ------------------------------------------------------------
 # Einstellungen
 # ------------------------------------------------------------
 
 SAMPLE_RATE = 44100       # Audio-Samplerate
+
 MIN_VOLTAGE = 0.0
 MAX_VOLTAGE = 12.0
 
-MIN_RPM = 800             # Motor läuft bei kleiner Spannung bereits etwas
+MIN_RPM = 750              # Standgas bei 0 V
 MAX_RPM = 12000
 
-# Grundfrequenz bei 1 Umdrehung
-RPM_TO_HZ = 1.0 / 60.0
+# Ein 4-Takt-V8 hat 4 Zündereignisse pro
+# Kurbelwellenumdrehung.
+#
+# 750 RPM:
+# 750 / 60 = 12,5 Umdrehungen/s
+# 12,5 * 4 = 50 Zündereignisse/s
+#
+# Deshalb entspricht 750 RPM einem Grundton von 50 Hz.
+ZÜNDUNGEN_PRO_UMDREHUNG = 4
+RPM_TO_HZ = ZÜNDUNGEN_PRO_UMDREHUNG / 60.0
 
 
 # ------------------------------------------------------------
@@ -24,18 +32,14 @@ RPM_TO_HZ = 1.0 / 60.0
 # ------------------------------------------------------------
 
 def voltage_to_rpm(voltage):
-    """Berechnet aus der Spannung eine virtuelle Motordrehzahl."""
+    """Berechnet aus der Spannung die virtuelle Motordrehzahl."""
 
     voltage = np.clip(voltage, MIN_VOLTAGE, MAX_VOLTAGE)
 
-    # lineare Kennlinie
+    # Lineare Kennlinie
     fraction = voltage / MAX_VOLTAGE
 
     rpm = MIN_RPM + fraction * (MAX_RPM - MIN_RPM)
-
-    # Motor steht bei 0 V
-    if voltage <= 0:
-        rpm = 0
 
     return rpm
 
@@ -45,9 +49,37 @@ def voltage_to_rpm(voltage):
 # ------------------------------------------------------------
 
 def rpm_to_frequency(rpm):
-    """Berechnet die Grundfrequenz aus der Drehzahl."""
+    """Berechnet die V8-Grundfrequenz aus der Drehzahl."""
 
     return rpm * RPM_TO_HZ
+
+
+# ------------------------------------------------------------
+# Lautstärke
+# ------------------------------------------------------------
+
+def voltage_to_volume(voltage):
+    """
+    Berechnet die Lautstärke.
+
+    Bei 0 V bleibt der Motor bereits gut hörbar.
+    Die Lautstärke steigt mit der Drehzahl nur moderat an.
+    """
+
+    voltage = np.clip(voltage, MIN_VOLTAGE, MAX_VOLTAGE)
+
+    fraction = voltage / MAX_VOLTAGE
+
+    # Grundlautstärke im Standgas
+    idle_volume = 0.22
+
+    # Zusätzliche Lautstärke bei steigender Drehzahl
+    max_additional_volume = 0.38
+
+    # Quadratwurzel sorgt für eine flachere Kennlinie.
+    volume = idle_volume + max_additional_volume * np.sqrt(fraction)
+
+    return volume
 
 
 # ------------------------------------------------------------
@@ -56,9 +88,9 @@ def rpm_to_frequency(rpm):
 
 def create_motor_sound(frequency, duration, volume):
     """
-    Erzeugt einen einfachen synthetischen Motorsound.
+    Erzeugt einen einfachen synthetischen V8-Motorsound.
 
-    Der Klang besteht aus Grundton + Harmonischen.
+    Grundton + mehrere Harmonische.
     """
 
     sample_count = int(SAMPLE_RATE * duration)
@@ -69,13 +101,16 @@ def create_motor_sound(frequency, duration, volume):
     signal = np.sin(2 * np.pi * frequency * t)
 
     # 2. Harmonische
-    signal += 0.40 * np.sin(2 * np.pi * frequency * 2 * t)
+    signal += 0.45 * np.sin(2 * np.pi * frequency * 2 * t)
 
     # 3. Harmonische
-    signal += 0.20 * np.sin(2 * np.pi * frequency * 3 * t)
+    signal += 0.25 * np.sin(2 * np.pi * frequency * 3 * t)
 
     # 4. Harmonische
-    signal += 0.10 * np.sin(2 * np.pi * frequency * 4 * t)
+    signal += 0.12 * np.sin(2 * np.pi * frequency * 4 * t)
+
+    # 5. Harmonische – etwas Charakter
+    signal += 0.06 * np.sin(2 * np.pi * frequency * 5 * t)
 
     # Lautstärke
     signal *= volume
@@ -92,8 +127,8 @@ def create_motor_sound(frequency, duration, volume):
 
 def main():
 
-    print("Virtueller Rennbahnmotor")
-    print("-------------------------")
+    print("Virtueller Porsche-V8")
+    print("----------------------")
     print("Spannung 0-12 V eingeben.")
     print("q beendet das Programm.\n")
 
@@ -117,12 +152,12 @@ def main():
         frequency = rpm_to_frequency(rpm)
 
         # Spannung -> Lautstärke
-        volume = voltage / MAX_VOLTAGE
+        volume = voltage_to_volume(voltage)
 
         print(
             f"  Spannung:  {voltage:.1f} V"
-            f"\n  Drehzahl:   {rpm:.0f} RPM"
-            f"\n  Frequenz:   {frequency:.1f} Hz"
+            f"\n  Drehzahl:  {rpm:.0f} RPM"
+            f"\n  Frequenz:  {frequency:.1f} Hz"
             f"\n  Lautstärke: {volume:.2f}\n"
         )
 
@@ -140,3 +175,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
